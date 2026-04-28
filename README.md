@@ -1,2 +1,0 @@
-# donbosco-zombie-invasion
-aura
