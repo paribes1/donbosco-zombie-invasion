@@ -20,9 +20,9 @@ canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; 
 @keyframes wobble { 0%,100%{transform:rotate(-3deg);} 50%{transform:rotate(3deg);} }
 @keyframes flicker { 0%,100%{opacity:1;} 92%{opacity:1;} 93%{opacity:0.7;} 94%{opacity:1;} 96%{opacity:0.8;} 97%{opacity:1;} }
 #howScreen { background:rgba(0,0,0,0.95); }
-#hud { position:fixed; top:0; left:50%; transform:translateX(-50%); width:580px; display:flex; justify-content:space-between; align-items:center; padding:6px 14px; background:rgba(0,0,0,0.78); color:#fff; font-size:20px; pointer-events:none; opacity:0; transition:opacity 0.3s; border-bottom:1px solid #333; z-index:5; }
+#hud { position:fixed; top:0; left:50%; transform:translateX(-50%); width:640px; max-width:100vw; display:flex; justify-content:space-between; align-items:center; padding:6px 14px; background:rgba(0,0,0,0.78); color:#fff; font-size:20px; pointer-events:none; opacity:0; transition:opacity 0.3s; border-bottom:1px solid #333; z-index:5; }
 #hud.visible { opacity:1; }
-.hp { color:#ff5555; } .ammo { color:#ffcc00; } .kills { color:#88ff88; } .wavebadge { color:#ff8800; }
+.hp { color:#ff5555; } .ammo { color:#ffcc00; } .kills { color:#88ff88; } .wavebadge { color:#ff8800; } .weapon { color:#88ccff; }
 #bossBar { position:fixed; bottom:65px; left:50%; transform:translateX(-50%); width:420px; display:none; flex-direction:column; align-items:center; z-index:5; }
 #bossBar.visible { display:flex; }
 .bossName { color:#ff2222; font-size:22px; letter-spacing:3px; text-shadow:0 0 12px #ff0000; margin-bottom:4px; font-family:'Creepster',cursive; animation:flicker 2s infinite; }
@@ -56,7 +56,8 @@ canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; 
     WASD / PIJLTJES &rarr; BEWEGEN<br>
     MUIS &rarr; RICHTEN<br>
     KLIK (houd in) &rarr; SCHIETEN<br>
-    R &rarr; HERLADEN (12 kogels)<br><br>
+    R &rarr; HERLADEN<br>
+    LOOP OVER DE SHOTGUN &rarr; PAKKEN<br><br>
     <span style="color:#ff8800;">VERMOORD 15 ZOMBIES</span><br>
     <span style="color:#ff2222;">DAN VERSCHIJNT DE EINDBAAS...</span><br>
     <span style="color:#ffff00;font-family:'Creepster',cursive;font-size:34px;">☠ DON BOSCO ☠</span>
@@ -67,6 +68,7 @@ canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; 
 <div id="hud">
   <span class="hp" id="hudHp">❤ 100</span>
   <span class="wavebadge" id="hudWave">0/15</span>
+  <span class="weapon" id="hudWeapon">HANDGUN</span>
   <span class="kills" id="hudKills">☠ 0 KILLS</span>
   <span class="ammo" id="hudAmmo">⊛ 12/12</span>
 </div>
@@ -85,7 +87,7 @@ canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; 
   <button class="menu-btn" id="menuBtn2">&#8962; MENU</button>
 </div>
 
-<div id="hint">WASD = BEWEGEN &nbsp;|&nbsp; MUIS = RICHTEN &nbsp;|&nbsp; KLIK = SCHIETEN &nbsp;|&nbsp; R = HERLADEN</div>
+<div id="hint">WASD = BEWEGEN &nbsp;|&nbsp; MUIS = RICHTEN &nbsp;|&nbsp; KLIK = SCHIETEN &nbsp;|&nbsp; R = HERLADEN &nbsp;|&nbsp; SHOTGUN = OPPAKKEN</div>
 
 <script>
 
@@ -118,6 +120,7 @@ function playTone(freq, type, dur, vol, delay) {
   o.start(t); o.stop(t + dur + 0.02);
 }
 function sfxShoot()    { playNoise(0.1, 0.28, 800); playTone(160,'square',0.06,0.05); }
+function sfxShotgun()  { playNoise(0.16, 0.46, 520); playTone(95,'sawtooth',0.08,0.12); playTone(70,'sine',0.14,0.08,0.04); }
 function sfxHit()      { playTone(200,'sawtooth',0.08,0.18); playTone(130,'sine',0.07,0.12,0.04); }
 function sfxDeath()    { playTone(280,'sawtooth',0.05,0.22); playTone(100,'sine',0.18,0.2,0.08); }
 function sfxHurt()     { playTone(90,'sawtooth',0.15,0.28); }
@@ -163,25 +166,30 @@ function collides(mx, my, hw, hh) {
   return false;
 }
 
-const SCALE = VW / 185, PLAYER_SPD = 1.5, BULLET_SPD = 4.5, MAX_AMMO = 12, RELOAD_TIME = 120;
+const SCALE = VW / 185, PLAYER_SPD = 1.5, RELOAD_TIME = 120;
+const WEAPONS = {
+  pistol:  { name:'HANDGUN', maxAmmo:12, pellets:1, damage:26, spread:0.035, bulletSpeed:5.2, bulletLife:82, fireRate:12, knockback:2.8, bulletSize:3.2 },
+  shotgun: { name:'SHOTGUN', maxAmmo:6,  pellets:7, damage:18, spread:0.34,  bulletSpeed:4.8, bulletLife:38, fireRate:30, knockback:5.4, bulletSize:2.6 }
+};
 
 // All state vars declared ONCE here
 let gameState = 'menu';
-let player, bullets, zombies, particles;
+let player, bullets, zombies, particles, pickups, corpses;
 let camX, camY;
 let mouseX, mouseY, mouseMapX, mouseMapY, mouseDown;
-let killCount, bossSpawned, reloadCooldown, frameCount;
+let killCount, bossSpawned, reloadCooldown, frameCount, lastShotFrame;
 let keys;
 
 function initGame() {
   const s = findSpawn();
-  player = { x:s.x, y:s.y, facing:'down', walkFrame:0, walkT:0, moving:false, hp:100, maxHp:100, ammo:MAX_AMMO, invincible:0 };
-  bullets = []; zombies = []; particles = [];
+  player = { x:s.x, y:s.y, facing:'down', walkFrame:0, walkT:0, moving:false, hp:100, maxHp:100, weapon:'pistol', ammo:WEAPONS.pistol.maxAmmo, invincible:0 };
+  bullets = []; zombies = []; particles = []; pickups = []; corpses = [];
   camX = s.x; camY = s.y;
   mouseX = VW/2; mouseY = VH/2; mouseMapX = s.x; mouseMapY = s.y; mouseDown = false;
   keys = {};
-  killCount = 0; bossSpawned = false; reloadCooldown = 0; frameCount = 0;
+  killCount = 0; bossSpawned = false; reloadCooldown = 0; frameCount = 0; lastShotFrame = -999;
   document.getElementById('bossBar').classList.remove('visible');
+  spawnShotgunPickup();
   showAnnounce('WAVE 1 — ZOMBIES NADEREN...');
   spawnWave(5);
   startMusic();
@@ -197,6 +205,49 @@ function findSpawn() {
     }
   }
   return { x:cx, y:cy };
+}
+
+function dirForFacing(facing) {
+  if (facing === 'up') return { x:0, y:-1 };
+  if (facing === 'left') return { x:-1, y:0 };
+  if (facing === 'right') return { x:1, y:0 };
+  return { x:0, y:1 };
+}
+
+function findPickupSpot(x, y, dx, dy) {
+  const px = -dy, py = dx;
+  for (let d = 30; d <= 75; d += 5) {
+    for (let s = 0; s <= 18; s += 6) {
+      const tries = s ? [-s, s] : [0];
+      for (let i = 0; i < tries.length; i++) {
+        const tx = x + dx * d + px * tries[i], ty = y + dy * d + py * tries[i];
+        if (!collides(tx, ty, 10, 7)) return { x:tx, y:ty };
+      }
+    }
+  }
+  return { x:x + dx * 34, y:y + dy * 34 };
+}
+
+function spawnShotgunPickup() {
+  const d = dirForFacing(player.facing);
+  const spot = findPickupSpot(player.x, player.y, d.x, d.y);
+  pickups.push({ type:'shotgun', x:spot.x, y:spot.y, bob:Math.random()*Math.PI*2 });
+}
+
+function collectPickups() {
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const p = pickups[i];
+    if (p.type === 'shotgun' && Math.hypot(player.x-p.x, player.y-p.y) < 13) {
+      player.weapon = 'shotgun';
+      player.ammo = WEAPONS.shotgun.maxAmmo;
+      reloadCooldown = 0;
+      pickups.splice(i, 1);
+      spawnParticles(p.x, p.y, '#ffcc44', 14, 1.8, 22, 38, 1.5, 3.2);
+      sfxReload();
+      showAnnounce('SHOTGUN OPGEPAKT');
+      updateHUD();
+    }
+  }
 }
 
 const ZTYPES = [
@@ -218,44 +269,107 @@ function spawnZombie(isBoss) {
   let x = player.x + Math.cos(angle) * dist, y = player.y + Math.sin(angle) * dist;
   for (let r = 0; r < 60; r++) { if (!collides(x, y)) break; x += Math.cos(angle + Math.PI)*2; y += Math.sin(angle + Math.PI)*2; }
   if (isBoss) {
-    zombies.push({ x:x, y:y, hp:500, maxHp:500, spd:0.22, dmg:25, col:'#cc0000', size:2.2, isBoss:true, walkFrame:0, walkT:0, attackCooldown:0,   stuckTime: 0,
-  lastX: x,
-  lastY: y });
+    zombies.push({ x:x, y:y, hp:500, maxHp:500, spd:0.22, dmg:25, col:'#cc0000', size:2.2, isBoss:true, walkFrame:0, walkT:0, attackCooldown:0, stuckTime:0, lastX:x, lastY:y });
     document.getElementById('bossBar').classList.add('visible');
     document.getElementById('bossBarFill').style.width = '100%';
     sfxBossRoar(); showAnnounce('☠  DON BOSCO IS ONTWAAKT  ☠');
   } else {
     const t = ZTYPES[Math.floor(Math.random() * ZTYPES.length)];
-    zombies.push({ x:x, y:y, hp:t.hp, maxHp:t.hp, spd:t.spd*(0.85+Math.random()*0.3), dmg:t.dmg, col:t.col, size:t.size, isBoss:false, walkFrame:0, walkT:0, attackCooldown:0 });
+    zombies.push({ x:x, y:y, hp:t.hp, maxHp:t.hp, spd:t.spd*(0.85+Math.random()*0.3), dmg:t.dmg, col:t.col, size:t.size, isBoss:false, walkFrame:0, walkT:0, attackCooldown:0, stuckTime:0, lastX:x, lastY:y });
   }
 }
 
 function shoot() {
   if (player.ammo <= 0 || reloadCooldown > 0) return;
-  const dx = mouseMapX - player.x, dy = mouseMapY - player.y, len = Math.sqrt(dx*dx+dy*dy)||1;
-  const sp = (Math.random()-0.5)*0.06;
-  bullets.push({ x:player.x, y:player.y, vx:(dx/len)*BULLET_SPD+sp, vy:(dy/len)*BULLET_SPD+sp, life:80 });
-  player.ammo--; sfxShoot();
+  const w = WEAPONS[player.weapon];
+  if (frameCount - lastShotFrame < w.fireRate) return;
+  const dx = mouseMapX - player.x, dy = mouseMapY - player.y, base = Math.atan2(dy, dx);
+  const muzzleX = player.x + Math.cos(base) * 8, muzzleY = player.y + Math.sin(base) * 8;
+  for (let i = 0; i < w.pellets; i++) {
+    const spread = (Math.random() - 0.5) * w.spread;
+    const a = base + spread;
+    const spd = w.bulletSpeed * (0.92 + Math.random() * 0.16);
+    bullets.push({
+      x:muzzleX, y:muzzleY, px:muzzleX, py:muzzleY,
+      vx:Math.cos(a)*spd, vy:Math.sin(a)*spd,
+      life:w.bulletLife + Math.random()*8,
+      damage:w.damage, knockback:w.knockback, size:w.bulletSize,
+      weapon:player.weapon
+    });
+  }
+  player.ammo--; lastShotFrame = frameCount;
+  if (player.weapon === 'shotgun') sfxShotgun(); else sfxShoot();
   if (player.ammo <= 0) startReload();
   updateHUD();
 }
 
 function startReload() {
   if (reloadCooldown > 0) return;
+  if (player.ammo >= WEAPONS[player.weapon].maxAmmo) return;
   reloadCooldown = RELOAD_TIME; sfxReload(); updateHUD();
 }
 
-function spawnParticles(x, y, col, n, spd) {
+function spawnParticles(x, y, col, n, spd, minLife, maxLife, minSize, maxSize) {
   n = n||6; spd = spd||1.5;
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2;
-    particles.push({ x:x, y:y, vx:Math.cos(a)*spd*(0.4+Math.random()), vy:Math.sin(a)*spd*(0.4+Math.random()), life:18+Math.random()*14, maxLife:32, col:col, size:1.5+Math.random()*2 });
+    const life = (minLife || 18) + Math.random() * ((maxLife || 32) - (minLife || 18));
+    particles.push({ x:x, y:y, vx:Math.cos(a)*spd*(0.4+Math.random()), vy:Math.sin(a)*spd*(0.4+Math.random()), life:life, maxLife:life, col:col, size:(minSize || 1.5)+Math.random()*((maxSize || 3.5)-(minSize || 1.5)) });
   }
+}
+
+function distPointToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, len2 = dx*dx + dy*dy;
+  if (!len2) return Math.hypot(px-x1, py-y1);
+  const t = Math.max(0, Math.min(1, ((px-x1)*dx + (py-y1)*dy) / len2));
+  return Math.hypot(px - (x1 + dx*t), py - (y1 + dy*t));
+}
+
+function spawnDirectionalParticles(x, y, vx, vy, colors, n, spd, spread, minLife, maxLife, minSize, maxSize) {
+  const base = Math.atan2(vy, vx);
+  for (let i = 0; i < n; i++) {
+    const a = base + (Math.random() - 0.5) * spread;
+    const life = minLife + Math.random() * (maxLife - minLife);
+    particles.push({
+      x:x, y:y,
+      vx:Math.cos(a)*spd*(0.45+Math.random()),
+      vy:Math.sin(a)*spd*(0.45+Math.random()),
+      life:life, maxLife:life,
+      col:colors[Math.floor(Math.random()*colors.length)],
+      size:minSize + Math.random() * (maxSize - minSize)
+    });
+  }
+}
+
+function spawnBloodImpact(x, y, b, z) {
+  const blood = z.isBoss ? ['#aa0000','#dd1616','#4d0000'] : ['#8b0000','#bb1111','#4b0000'];
+  spawnDirectionalParticles(x, y, b.vx, b.vy, blood, z.isBoss ? 12 : 7, z.isBoss ? 2.8 : 2.1, 1.35, 24, 52, 1.2, 3.4);
+  spawnParticles(x, y, blood[0], z.isBoss ? 8 : 4, 1.2, 22, 44, 1.6, 4.2);
+}
+
+function spawnWallImpact(b) {
+  spawnDirectionalParticles(b.x, b.y, -b.vx, -b.vy, ['#ffd866','#ff9f1a','#ddd'], 5, 1.7, 1.0, 10, 22, 1, 2.2);
+}
+
+function knockZombie(z, b) {
+  const len = Math.hypot(b.vx, b.vy) || 1;
+  const force = b.knockback * (z.isBoss ? 0.35 : 1);
+  const kx = b.vx / len * force, ky = b.vy / len * force;
+  const hw = z.isBoss ? 8 : 4, hh = z.isBoss ? 6 : 3;
+  if (!collides(z.x + kx, z.y + ky, hw, hh)) { z.x += kx; z.y += ky; return; }
+  if (!collides(z.x + kx, z.y, hw, hh)) z.x += kx;
+  if (!collides(z.x, z.y + ky, hw, hh)) z.y += ky;
+}
+
+function leaveCorpse(z, isBoss) {
+  const life = isBoss ? 620 : 360;
+  corpses.push({ x:z.x, y:z.y, size:z.size, col:z.col, isBoss:isBoss, rot:(Math.random()-0.5)*1.2, life:life, maxLife:life });
 }
 
 function updateHUD() {
   document.getElementById('hudHp').textContent    = '❤ ' + player.hp;
-  document.getElementById('hudAmmo').textContent  = reloadCooldown > 0 ? '⟳ RELOADING' : '⊛ ' + player.ammo + '/' + MAX_AMMO;
+  document.getElementById('hudWeapon').textContent = WEAPONS[player.weapon].name;
+  document.getElementById('hudAmmo').textContent  = reloadCooldown > 0 ? '⟳ RELOADING' : '⊛ ' + player.ammo + '/' + WEAPONS[player.weapon].maxAmmo;
   document.getElementById('hudKills').textContent = '☠ ' + killCount + ' KILLS';
   document.getElementById('hudWave').textContent  = bossSpawned ? '⚠ BOSS!' : killCount + '/15';
 }
@@ -281,7 +395,12 @@ function drawPlayer() {
   px(-3,1,6,4,'#2255cc');
   px(-4,1-ls*0.5,1,3,'#2255cc'); px(3,1+ls*0.5,1,3,'#2255cc');
   px(-4,3.5-ls*0.5,1,1,'#f5c17a'); px(3,3.5+ls*0.5,1,1,'#f5c17a');
-  ctx.fillStyle='#666'; ctx.fillRect(2.5*P,2.5*P,4*P,P);
+  if (player.weapon === 'shotgun') {
+    ctx.fillStyle='#7b4a1f'; ctx.fillRect(2.2*P,2.2*P,3.8*P,1.6*P);
+    ctx.fillStyle='#999'; ctx.fillRect(4.8*P,2.1*P,5.8*P,0.7*P); ctx.fillRect(4.8*P,3.1*P,5.8*P,0.7*P);
+  } else {
+    ctx.fillStyle='#666'; ctx.fillRect(2.5*P,2.5*P,4*P,P);
+  }
   px(-2,-3,4,4,'#f5c17a'); px(-2,-3,4,1,'#3b2314');
   if (player.facing !== 'up') { px(-1,-2,1,1,'#222'); px(0,-2,1,1,'#222'); }
   ctx.restore();
@@ -325,8 +444,48 @@ function drawZombie(z) {
 
 function drawBullet(b) {
   const sc = mapToScreen(b.x, b.y);
-  ctx.save(); ctx.fillStyle='#ffff88'; ctx.shadowColor='#ffcc00'; ctx.shadowBlur=8;
-  ctx.beginPath(); ctx.arc(sc[0],sc[1],3,0,Math.PI*2); ctx.fill(); ctx.restore();
+  const tail = mapToScreen(b.x - b.vx*1.7, b.y - b.vy*1.7);
+  ctx.save();
+  ctx.strokeStyle = b.weapon === 'shotgun' ? '#ffdf8a' : '#fff1a8';
+  ctx.lineWidth = b.size;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#ffb000';
+  ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(tail[0], tail[1]); ctx.lineTo(sc[0], sc[1]); ctx.stroke();
+  ctx.fillStyle = '#fff8cf';
+  ctx.beginPath(); ctx.arc(sc[0], sc[1], Math.max(1.4, b.size*0.55), 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawPickup(p) {
+  const sc = mapToScreen(p.x, p.y), sx = sc[0], sy = sc[1] + Math.sin(frameCount*0.08 + p.bob) * 2;
+  if (sx < -50 || sx > VW+50 || sy < -50 || sy > VH+50) return;
+  ctx.save(); ctx.translate(sx, sy);
+  ctx.fillStyle='rgba(255,205,60,0.18)'; ctx.beginPath(); ctx.arc(0,0,18+Math.sin(frameCount*0.08)*2,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(255,230,120,0.55)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(0,0,17,0,Math.PI*2); ctx.stroke();
+  ctx.rotate(-0.35);
+  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(-15,5,32,3);
+  ctx.fillStyle='#6b3f1d'; ctx.fillRect(-15,-3,9,6); ctx.fillRect(-9,1,7,4);
+  ctx.fillStyle='#bbb'; ctx.fillRect(-4,-4,24,2); ctx.fillRect(-4,0,24,2);
+  ctx.fillStyle='#2b2b2b'; ctx.fillRect(1,-2,5,4);
+  ctx.restore();
+}
+
+function drawCorpse(c) {
+  const sc = mapToScreen(c.x, c.y), sx = sc[0], sy = sc[1];
+  if (sx < -120 || sx > VW+120 || sy < -120 || sy > VH+120) return;
+  const fade = Math.min(1, c.life / 70), P = 2 * c.size;
+  ctx.save(); ctx.globalAlpha = fade; ctx.translate(sx, sy);
+  ctx.fillStyle = c.isBoss ? 'rgba(100,0,0,0.45)' : 'rgba(115,0,0,0.38)';
+  ctx.beginPath(); ctx.ellipse(0, 6*P, 9*P, 3.3*P, c.rot*0.35, 0, Math.PI*2); ctx.fill();
+  ctx.rotate(c.rot);
+  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(0,8*P,5*P,1.2*P,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = c.isBoss ? '#3b0000' : c.col;
+  ctx.fillRect(-5*P,-1*P,10*P,5*P);
+  ctx.fillStyle = c.isBoss ? '#7a5533' : '#88bb88';
+  ctx.fillRect(4*P,-2*P,4*P,4*P);
+  ctx.fillStyle='#311'; ctx.fillRect(-7*P,1*P,3*P,1.5*P); ctx.fillRect(3*P,4*P,4*P,1.5*P);
+  ctx.restore(); ctx.globalAlpha = 1;
 }
 
 function update() {
@@ -344,9 +503,10 @@ function update() {
     player.walkT++;
     if (player.walkT > 7) { player.walkT = 0; player.walkFrame = (player.walkFrame+1)%4; }
   } else { player.walkFrame = 0; }
+  collectPickups();
   if (player.invincible > 0) player.invincible--;
-  if (reloadCooldown > 0) { reloadCooldown--; if (reloadCooldown <= 0) { player.ammo = MAX_AMMO; updateHUD(); } }
-  if (mouseDown && player.ammo > 0 && reloadCooldown <= 0 && frameCount % 8 === 0) shoot();
+  if (reloadCooldown > 0) { reloadCooldown--; if (reloadCooldown <= 0) { player.ammo = WEAPONS[player.weapon].maxAmmo; updateHUD(); } }
+  if (mouseDown && player.ammo > 0 && reloadCooldown <= 0) shoot();
 
   const mm = screenToMap(mouseX, mouseY); mouseMapX = mm[0]; mouseMapY = mm[1];
   const fdy = mouseMapY - player.y, fdx = mouseMapX - player.x;
@@ -358,13 +518,17 @@ function update() {
 
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
+    b.px = b.x; b.py = b.y;
     b.x += b.vx; b.y += b.vy; b.life--;
-    if (b.life <= 0 || solid(b.x, b.y)) { spawnParticles(b.x,b.y,'#ffcc44',3,0.8); bullets.splice(i,1); continue; }
+    if (b.life <= 0 || solid(b.x, b.y)) { spawnWallImpact(b); bullets.splice(i,1); continue; }
     let hit = false;
     for (let j = zombies.length - 1; j >= 0; j--) {
       const z = zombies[j];
-      if (Math.hypot(b.x-z.x, b.y-z.y) < (z.isBoss?15:7*z.size)) {
-        z.hp -= 25; spawnParticles(b.x,b.y,z.col,5,2); sfxHit();
+      if (distPointToSegment(z.x, z.y, b.px, b.py, b.x, b.y) < (z.isBoss?15:7*z.size)) {
+        z.hp -= b.damage;
+        knockZombie(z, b);
+        spawnBloodImpact(b.x, b.y, b, z);
+        sfxHit();
         if (z.hp <= 0) killZombie(j, z.isBoss);
         else if (z.isBoss) document.getElementById('bossBarFill').style.width = (z.hp/z.maxHp*100)+'%';
         hit = true; break;
@@ -430,11 +594,16 @@ if (z.stuckTime > 120) { // ~2 seconden
     const p = particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.88; p.vy*=0.88; p.life--;
     if (p.life <= 0) particles.splice(i, 1);
   }
+  for (let i = corpses.length - 1; i >= 0; i--) {
+    corpses[i].life--;
+    if (corpses[i].life <= 0) corpses.splice(i, 1);
+  }
 }
 
 function killZombie(idx, isBoss) {
   const z = zombies[idx];
-  spawnParticles(z.x, z.y, z.col, isBoss?22:10, isBoss?3:2);
+  leaveCorpse(z, isBoss);
+  spawnParticles(z.x, z.y, '#770000', isBoss?28:14, isBoss?3.6:2.4, 28, 64, 1.8, 5);
   sfxDeath(); zombies.splice(idx, 1);
   if (isBoss) { endGame(true); return; }
   killCount++; updateHUD();
@@ -445,6 +614,8 @@ function render() {
   ctx.save(); ctx.imageSmoothingEnabled=false;
   ctx.drawImage(mapImg, VW/2-camX*SCALE, VH/2-camY*SCALE, mapW*SCALE, mapH*SCALE);
   ctx.restore();
+  for (let i=0;i<corpses.length;i++) drawCorpse(corpses[i]);
+  for (let i=0;i<pickups.length;i++) drawPickup(pickups[i]);
   for (let i=0;i<particles.length;i++) {
     const p=particles[i], sc=mapToScreen(p.x,p.y);
     ctx.globalAlpha=p.life/p.maxLife; ctx.fillStyle=p.col;
