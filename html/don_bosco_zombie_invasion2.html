@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Don Bosco Zombie Invasion</title>
+<link rel="stylesheet" href="../css/game.css">
+</head>
+<body>
+<canvas id="gc"></canvas>
+
+<div class="screen active" id="menuScreen">
+  <div class="zombieArt">ZOMBIE</div>
+  <h1>DON BOSCO<br>ZOMBIE INVASION</h1>
+  <div class="subtitle">SURVIVE THE UNDEAD</div>
+  <button class="menu-btn" id="startBtn">START GAME</button>
+  <button class="menu-btn" id="howBtn">? HOW TO PLAY</button>
+  <p class="menu-credit">MADE WITH FEAR AND JAVASCRIPT</p>
+</div>
+
+<div class="screen" id="howScreen">
+  <h2 class="how-title">HOW TO PLAY</h2>
+  <div class="how-copy">
+    WASD / PIJLTJES &rarr; BEWEGEN<br>
+    MUIS &rarr; RICHTEN<br>
+    KLIK (houd in) &rarr; SCHIETEN / STEKEN<br>
+    R &rarr; HERLADEN<br>
+    1 / 2 / 3 &rarr; WAPEN WISSELEN<br>
+    LOOP OVER WAPENS &rarr; PAKKEN<br><br>
+    <span class="boss-warning">VERMOORD 15 ZOMBIES</span><br>
+    <span class="boss-tease">DAN VERSCHIJNT DE EINDBAAS...</span><br>
+    <span class="boss-skull">DON BOSCO</span>
+  </div>
+  <button class="menu-btn back-btn" id="backBtn">&#9664; TERUG</button>
+</div>
+
+<div id="hud">
+  <span class="hp" id="hudHp">HP 100</span>
+  <span class="wavebadge" id="hudWave">0/15</span>
+  <span class="weapon" id="hudWeapon">HANDGUN</span>
+  <span class="kills" id="hudKills">0 KILLS</span>
+  <span class="ammo" id="hudAmmo">12/12</span>
+</div>
+
+<div id="weaponBar">
+  <div class="weapon-slot" data-weapon="pistol">
+    <span class="weapon-key">1</span><span class="weapon-name">HANDGUN</span><span class="weapon-ammo" id="slotAmmoPistol">12/12</span>
+  </div>
+  <div class="weapon-slot locked" data-weapon="shotgun">
+    <span class="weapon-key">2</span><span class="weapon-name">SHOTGUN</span><span class="weapon-ammo" id="slotAmmoShotgun">LOCKED</span>
+  </div>
+  <div class="weapon-slot locked" data-weapon="knife">
+    <span class="weapon-key">3</span><span class="weapon-name">KNIFE</span><span class="weapon-ammo" id="slotAmmoKnife">LOCKED</span>
+  </div>
+</div>
+
+<div id="bossBar">
+  <div class="bossName">DON BOSCO</div>
+  <div id="bossBarBg"><div id="bossBarFill"></div></div>
+</div>
+
+<div id="waveAnnounce"></div>
+
+<div class="screen" id="endScreen">
+  <h2 id="endTitle"></h2>
+  <p id="endMsg"></p>
+  <button class="menu-btn" id="restartBtn">&#8635; OPNIEUW</button>
+  <button class="menu-btn" id="menuBtn2">&#8962; MENU</button>
+</div>
+
+<div id="hint">WASD = BEWEGEN &nbsp;|&nbsp; MUIS = RICHTEN &nbsp;|&nbsp; KLIK = SCHIETEN/STEKEN &nbsp;|&nbsp; 1/2/3 = WAPEN &nbsp;|&nbsp; R = HERLADEN</div>
+
+<script src="../js/game.js"></script>
+</body>
+</html>
