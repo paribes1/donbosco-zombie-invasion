@@ -8,6 +8,9 @@ canvas.width = VW; canvas.height = VH;
 
 let audioCtx = null;
 function getAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+function playAssetSfx(type, volume) {
+  return !!(window.DBZAssets && window.DBZAssets.playSfx(type, volume));
+}
 function playNoise(dur, vol, lpFreq) {
   const ac = getAudio(), t = ac.currentTime;
   const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
@@ -26,18 +29,19 @@ function playTone(freq, type, dur, vol, delay) {
   g.gain.setValueAtTime(vol || 0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   o.start(t); o.stop(t + dur + 0.02);
 }
-function sfxShoot()    { playNoise(0.1, 0.28, 800); playTone(160,'square',0.06,0.05); }
-function sfxShotgun()  { playNoise(0.16, 0.46, 520); playTone(95,'sawtooth',0.08,0.12); playTone(70,'sine',0.14,0.08,0.04); }
-function sfxHit()      { playTone(200,'sawtooth',0.08,0.18); playTone(130,'sine',0.07,0.12,0.04); }
-function sfxDeath()    { playTone(280,'sawtooth',0.05,0.22); playTone(100,'sine',0.18,0.2,0.08); }
-function sfxHurt()     { playTone(90,'sawtooth',0.15,0.28); }
-function sfxReload()   { playTone(480,'square',0.05,0.12); playTone(700,'square',0.05,0.08,0.07); }
-function sfxBossRoar() { for (let i = 0; i < 6; i++) playTone(60 + i*15, 'sawtooth', 0.35, 0.18, i*0.06); }
-function sfxWin()      { [523,659,784,1047,1319].forEach(function(n,i) { playTone(n,'sine',0.5,0.28,i*0.18); }); }
+function sfxShoot()    { if (playAssetSfx('pistol')) return; playNoise(0.1, 0.28, 800); playTone(160,'square',0.06,0.05); }
+function sfxShotgun()  { if (playAssetSfx('shotgun')) return; playNoise(0.16, 0.46, 520); playTone(95,'sawtooth',0.08,0.12); playTone(70,'sine',0.14,0.08,0.04); }
+function sfxKnife(hit) { if (playAssetSfx('knife')) return; if (hit) { playTone(200,'sawtooth',0.08,0.18); playTone(130,'sine',0.07,0.12,0.04); } else playTone(420, 'square', 0.05, 0.08); }
+function sfxHit()      { if (playAssetSfx('hit')) return; playTone(200,'sawtooth',0.08,0.18); playTone(130,'sine',0.07,0.12,0.04); }
+function sfxDeath()    { if (playAssetSfx('death')) return; playTone(280,'sawtooth',0.05,0.22); playTone(100,'sine',0.18,0.2,0.08); }
+function sfxHurt()     { if (playAssetSfx('hurt')) return; playTone(90,'sawtooth',0.15,0.28); }
+function sfxReload()   { if (playAssetSfx('reload')) return; playTone(480,'square',0.05,0.12); playTone(700,'square',0.05,0.08,0.07); }
+function sfxPickup()   { if (playAssetSfx('pickup')) return; sfxReload(); }
+function sfxBossRoar() { if (playAssetSfx('boss-roar')) return; for (let i = 0; i < 6; i++) playTone(60 + i*15, 'sawtooth', 0.35, 0.18, i*0.06); }
+function sfxWin()      { if (playAssetSfx('win')) return; [523,659,784,1047,1319].forEach(function(n,i) { playTone(n,'sine',0.5,0.28,i*0.18); }); }
 
-let musicOn = false, musicTimer = null;
-function startMusic() {
-  if (musicOn) return; musicOn = true;
+let musicOn = false, musicTimer = null, musicScene = 'wave';
+function startSynthMusic() {
   const bass = [55,58,55,52,55,58,62,50]; let bi = 0;
   musicTimer = setInterval(function() {
     if (!musicOn) return;
@@ -48,7 +52,27 @@ function startMusic() {
     if (bi % 8 === 3) { playTone(440,'square',0.03,0.03); playTone(550,'square',0.03,0.03,0.05); }
   }, 250);
 }
-function stopMusic() { musicOn = false; if (musicTimer) clearInterval(musicTimer); }
+function stopSynthMusic() { if (musicTimer) clearInterval(musicTimer); musicTimer = null; }
+function startMusic(scene) {
+  scene = scene || 'wave';
+  if (musicOn && musicScene === scene) return;
+  musicOn = true; musicScene = scene; stopSynthMusic();
+  if (window.DBZAssets && window.DBZAssets.playMusic(scene)) return;
+  if (window.DBZAssets && !window.DBZAssets.ready) {
+    window.DBZAssets.whenReady(function() {
+      if (!musicOn || window.DBZAssets.playMusic(musicScene)) return;
+      if (musicScene === 'menu') return;
+      if (!musicTimer) startSynthMusic();
+    });
+    return;
+  }
+  if (scene === 'menu') return;
+  startSynthMusic();
+}
+function stopMusic() {
+  musicOn = false; stopSynthMusic();
+  if (window.DBZAssets) window.DBZAssets.stopMusic();
+}
 
 const mapImg = new Image(), colImg = new Image();
 let mapW = 1110, mapH = 1417, colData;
@@ -107,7 +131,7 @@ function initGame() {
   refreshWeaponSpawns(true);
   showAnnounce('WAVE 1 - ZOMBIES NADEREN...');
   spawnWave(5);
-  startMusic();
+  startMusic('wave');
   updateHUD();
 }
 
@@ -211,7 +235,7 @@ function collectPickups() {
       reloadCooldown = 0;
       pickups.splice(i, 1);
       spawnParticles(p.x, p.y, '#ffcc44', 14, 1.8, 22, 38, 1.5, 3.2);
-      sfxReload();
+      sfxPickup();
       showAnnounce(WEAPONS[p.type].name + ' OPGEPAKT');
       updateHUD();
     }
@@ -240,6 +264,7 @@ function spawnZombie(isBoss) {
     zombies.push({ x:x, y:y, hp:500, maxHp:500, spd:0.22, dmg:25, col:'#cc0000', shirt:'#2a0000', pants:'#130000', hair:'#111', skin:'#7a5533', size:2.2, isBoss:true, walkFrame:0, walkT:0, attackCooldown:0, stuckTime:0, lastX:x, lastY:y, sway:Math.random()*Math.PI*2 });
     document.getElementById('bossBar').classList.add('visible');
     document.getElementById('bossBarFill').style.width = '100%';
+    startMusic('boss');
     sfxBossRoar(); showAnnounce('DON BOSCO IS ONTWAAKT');
   } else {
     const t = ZTYPES[Math.floor(Math.random() * ZTYPES.length)];
@@ -291,7 +316,7 @@ function meleeAttack(w) {
     }
   }
   lastShotFrame = frameCount;
-  if (hitAny) sfxHit(); else playTone(420, 'square', 0.05, 0.08);
+  sfxKnife(hitAny);
   updateHUD();
 }
 
@@ -394,6 +419,10 @@ function drawPlayer() {
   if (player.invincible > 0 && Math.floor(player.invincible/3) % 2 === 0) return;
   const P = 2.25, ls = player.walkFrame % 2 === 0 ? 1 : -1;
   const bob = player.moving ? Math.sin(frameCount * 0.28) * 0.7 : 0;
+  if (window.DBZAssets && window.DBZAssets.drawCharacterSprite(ctx, 'player', {
+    x: VW/2, y: VH/2 + bob, height: 44, frameCount: frameCount,
+    moving: player.moving, flipX: player.facing === 'left'
+  })) return;
   ctx.save(); ctx.translate(VW/2, VH/2 + bob);
   if (player.facing === 'left') ctx.scale(-1, 1);
   function px(x,y,w,h,c) { ctx.fillStyle=c; ctx.fillRect(x*P,y*P,w*P,h*P); }
@@ -427,6 +456,11 @@ function drawZombie(z) {
   const sc = mapToScreen(z.x, z.y), sx = sc[0], sy = sc[1];
   if (sx < -100 || sx > VW+100 || sy < -100 || sy > VH+100) return;
   const P = 2 * z.size, ls = z.walkFrame % 2 === 0 ? 1 : -1;
+  if (window.DBZAssets && window.DBZAssets.drawCharacterSprite(ctx, z.isBoss ? 'boss' : 'zombie', {
+    x: sx, y: sy, height: z.isBoss ? 90 : 38 * z.size, frameCount: frameCount,
+    moving: true, flipX: z.x > player.x, hpPct: z.hp / z.maxHp,
+    healthWidth: z.isBoss ? 62 : 26, label: z.isBoss ? 'DON BOSCO' : ''
+  })) return;
   ctx.save(); ctx.translate(sx, sy);
   if (z.isBoss) {
     const B = P * 0.6;
@@ -731,6 +765,15 @@ canvas.style.cursor = 'none';
 
 function gameLoop() { if (gameState!=='playing') return; update(); render(); requestAnimationFrame(gameLoop); }
 
+function unlockMenuMusic() {
+  if (gameState === 'menu' || gameState === 'how') {
+    getAudio();
+    startMusic('menu');
+  }
+}
+window.addEventListener('pointerdown', unlockMenuMusic, { once:true });
+window.addEventListener('keydown', unlockMenuMusic, { once:true });
+
 document.getElementById('startBtn').addEventListener('click', function() {
   getAudio();
   document.getElementById('menuScreen').classList.remove('active');
@@ -751,6 +794,7 @@ document.getElementById('menuBtn2').addEventListener('click', function() {
   document.getElementById('menuScreen').classList.add('active');
   document.getElementById('weaponBar').classList.remove('visible');
   gameState='menu';
+  startMusic('menu');
 });
 
 let assetsLoaded = 0;
